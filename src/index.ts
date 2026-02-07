@@ -15,7 +15,7 @@ interface Env {
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_PRIVATE_KEY: string;
   GEMINI_API_KEY: string;
-  CONFERENCE_MAP: string; // JSON: { "TEAM_ID": { "folderId": "...", "token": "xoxb-...", "sub": "email@domain.jp" } }
+  KAIGI_MAP: string; // JSON: { "TEAM_ID": { "folderId": "...", "token": "xoxb-...", "sub": "email@domain.jp" } }
   KAIGI_CACHE_KV: KVNamespace;
 }
 
@@ -43,7 +43,7 @@ export default {
         const channelId = formData.get('channel_id') as string;
         const userId = formData.get('user_id') as string;
 
-        const confMap: ConferenceConfig = JSON.parse(env.CONFERENCE_MAP);
+        const confMap: ConferenceConfig = JSON.parse(env.KAIGI_MAP);
         const config = confMap[slackTeamId];
 
         if (config) {
@@ -65,7 +65,7 @@ export default {
         if (body.event && body.event.type === 'app_mention') {
           const slackTeamId = body.team_id;
           const userQuestion = body.event.text.replace(/<@[A-Z0-9]+>/g, '').trim(); // メンション部分を削除
-          const confMap: ConferenceConfig = JSON.parse(env.CONFERENCE_MAP);
+          const confMap: ConferenceConfig = JSON.parse(env.KAIGI_MAP);
           const config = confMap[slackTeamId];
 
           if (config) {
