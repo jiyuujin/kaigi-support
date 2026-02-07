@@ -16,6 +16,7 @@ interface Env {
   GOOGLE_PRIVATE_KEY: string;
   GEMINI_API_KEY: string;
   CONFERENCE_MAP: string; // JSON: { "TEAM_ID": { "folderId": "...", "token": "xoxb-...", "sub": "email@domain.jp" } }
+  KAIGI_CACHE_KV: KVNamespace;
 }
 
 type ConferenceConfig = Record<
@@ -92,8 +93,19 @@ async function handleAiResponse(env: Env, event: any, config: ConferenceConfig[s
     const gToken = await getGoogleWorkspaceAccessToken(env, config.sub);
     debug('✅ Google 認証完了');
 
-    debug('📂 資料検索開始');
-    const { context, fileNames } = await fetchAllDocsContentInFolder(config.folderId, gToken);
+	const docCacheKey = `docs:${config.folderId}`;
+    let docsData = await env.KAIGI_CACHE_KV.get(docCacheKey, { type: 'json' }) as { context: string, fileNames: string[] } | null;
+
+	debug('📂 資料検索開始');
+    if (!docsData) {
+      debug('🆕 キャッシュがないため Google Drive から取得します');
+      docsData = await fetchAllDocsContentInFolder(config.folderId, gToken);
+      // 30 分間キャッシュ (頻繁に更新されるなら短めに)
+      await env.KAIGI_CACHE_KV.put(docCacheKey, JSON.stringify(docsData), { expirationTtl: 1800 });
+    } else {
+      debug('⚡ カンファレンス個別のキャッシュから資料を読み込みました');
+    }
+    const { context, fileNames } = docsData;
     debug(`✅ 資料取得完了 (${context.length} 文字, ${fileNames.length} ファイル)`);
 
     if (context.length < 100) {
@@ -116,6 +128,10 @@ async function handleAiResponse(env: Env, event: any, config: ConferenceConfig[s
 }
 
 async function getGoogleWorkspaceAccessToken(env: Env, subEmail: string): Promise<string> {
+  const cacheKey = `gtoken:${subEmail}`;
+  const cachedToken = await env.KAIGI_CACHE_KV.get(cacheKey);
+  if (cachedToken) return cachedToken;
+
   const now = Math.floor(Date.now() / 1000);
   const expiry = now + 3600;
 
@@ -146,6 +162,7 @@ async function getGoogleWorkspaceAccessToken(env: Env, subEmail: string): Promis
       console.error('Google Auth Error:', JSON.stringify(data));
       throw new Error(`Google Auth Error: ${data.error_description || data.error}`);
     }
+    await env.KAIGI_CACHE_KV.put(cacheKey, data.access_token, { expirationTtl: 3300 });
     return data.access_token;
   } catch (e: any) {
     console.error('Auth Exception:', e.message);
