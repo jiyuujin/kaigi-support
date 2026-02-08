@@ -93,10 +93,24 @@ async function handleAiResponse(env: Env, event: any, config: ConferenceConfig[s
     const gToken = await getGoogleWorkspaceAccessToken(env, config.sub);
     debug('✅ Google 認証完了');
 
-	const docCacheKey = `docs:${config.folderId}`;
-    let docsData = await env.KAIGI_CACHE_KV.get(docCacheKey, { type: 'json' }) as { context: string, fileNames: string[] } | null;
+    const docCacheKey = `docs:${config.folderId}`;
+    let docsData = (await env.KAIGI_CACHE_KV.get(docCacheKey, { type: 'json' })) as { context: string; fileNames: string[] } | null;
 
-	debug('📂 資料検索開始');
+    const qHash = await generateQuestionHash(question);
+    const cachedAnswer = await env.KAIGI_CACHE_KV.get(`qa:${config.folderId}:${qHash}`);
+
+    const questionKey = `question_count:${config.folderId}:${qHash}`;
+    const currentCount = await env.KAIGI_CACHE_KV.get(questionKey);
+    const newCount = (parseInt(currentCount || '0') + 1).toString();
+    await env.KAIGI_CACHE_KV.put(questionKey, newCount, { expirationTtl: 2592000 }); // 30 日間キャッシュ
+
+    if (cachedAnswer) {
+      debug('⚡ 過去の類似質問から回答を取得');
+      await postToSlack(event.channel, `<@${event.user}>\n\n${cachedAnswer}\n\n_※ 過去の回答より_`, config.token);
+      return;
+    }
+
+    debug('📂 資料検索開始');
     if (!docsData) {
       debug('🆕 キャッシュがないため Google Drive から取得します');
       docsData = await fetchAllDocsContentInFolder(config.folderId, gToken);
@@ -119,6 +133,11 @@ async function handleAiResponse(env: Env, event: any, config: ConferenceConfig[s
 
     debug('📨 Slack へ投稿中...');
     await postToSlack(event.channel, `<@${event.user}>\n\n${answer}`, config.token);
+    await env.KAIGI_CACHE_KV.put(
+      `qa:${config.folderId}:${qHash}`,
+      answer,
+      { expirationTtl: 86400 }, // 1 日間キャッシュ
+    );
     debug('🎉 全工程完了！');
   } catch (error: any) {
     console.error('❌ Error:', error);
@@ -409,4 +428,16 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+async function generateQuestionHash(question: string): Promise<string> {
+  const normalized = question.toLowerCase().trim();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(normalized);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
 }
