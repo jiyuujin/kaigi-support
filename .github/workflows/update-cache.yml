@@ -1,0 +1,29 @@
+on:
+  schedule:
+    - cron: '0 0 * * *' # 毎日 UTC 0 時（JST 9 時）
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update FlutterKaigi
+        run: |
+          curl -X POST "${{ secrets.WORKER_URL }}/cron/update-cache?phase=files" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          sleep 10
+          for offset in 0 5 10 15 20 25; do
+            curl -X POST "${{ secrets.WORKER_URL }}/cron/update-cache?phase=embed&team=T0571S5TFJ6&offset=$offset" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            sleep 20
+          done
+
+      - name: Wait between teams
+        run: sleep 30
+
+      - name: Update Front-end Conference Kansai
+        run: |
+          for offset in 0 5 10 15 20 25; do
+            curl -X POST "${{ secrets.WORKER_URL }}/cron/update-cache?phase=embed&team=T08V6NHP9KJ&offset=$offset" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            sleep 20
+          done
