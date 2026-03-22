@@ -17,6 +17,15 @@
       "id": "9d02be59a0974279b0ea87190d93721c",
     },
   ],
+  "triggers": {
+    "crons": ["0 0 * * *"],
+  },
+  "vectorize": [
+    {
+      "binding": "KAIGI_VECTORIZE",
+      "index_name": "kaigi-rag-index",
+    },
+  ],
   /**
    * Smart Placement
    * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
